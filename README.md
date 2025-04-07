@@ -14,6 +14,7 @@
 ## omada adapter for ioBroker
 
 Adapter for TP-Link Omada
+forked from TA2k/ioBroker.omada
 
 # Loginablauf
 
@@ -23,16 +24,7 @@ Default Port für Hardware Controller ist 443
 # Steuerung
 
 Ssids Einstellungen können via omada.0.id.ssids geändert werden
-
-## Diskussion und Fragen
-
-<https://forum.iobroker.net/topic/62562/test-adapter-omada-tp-link>
-
-## Changelog
-
-### 0.0.1
-
-- (TA2k) initial release
+Auf Änderungen von Insights reagieren wurde ergänzt. Clients können durch Zustandsänderung von 'block' block oder unblock gesetzt werden.
 
 ## License
 
