@@ -307,6 +307,7 @@ class Omada extends utils.Adapter {
               preferedArrayDesc: element.preferedArrayDesc,
               channelName: element.desc,
               deleteBeforeUpdate: element.deleteBeforeUpdate,
+              write: true, // Make the objects under insights writable
             });
             this.log.debug(`end parsing ${element.path} for ${device.name}`);
             // await this.setObjectNotExistsAsync(element.path + ".json", {
@@ -433,53 +434,106 @@ class Omada extends utils.Adapter {
         const idArray = id.split('.');
         const siteId = idArray[2];
         // const folder = idArray[3];
-        const ssidId = idArray[4];
-        const command = idArray[5];
+        if (idArray[3] === 'ssids') {
+          const ssidId = idArray[4];
+          const command = idArray[5];
 
-        const ssidStatus = this.ssids[siteId].find((ssid) => ssid.id == ssidId);
-        if (!ssidStatus) {
-          this.log.error('SSID not found');
-          return;
-        }
-        ssidStatus[command] = state.val;
-        this.log.debug(JSON.stringify(ssidStatus));
-        await this.requestClient({
-          method: 'patch',
-          url: `https://${this.config.ip}:${this.config.port}/${this.omadacId}/api/v2/sites/${siteId}/setting/wlans/${ssidStatus.wlanId}/ssids/${ssidId}`,
-          headers: {
-            'Content-Type': ' application/json;charset=UTF-8',
-            Accept: 'application/json, text/plain, */*',
-            'Csrf-Token': this.session.token,
-          },
-          data: ssidStatus,
-        })
-          .then(async (res) => {
-            if (res.data.errorCode != 0) {
-              this.log.error(JSON.stringify(res.data));
-              return;
-            }
-            this.log.info(JSON.stringify(res.data));
+          const ssidStatus = this.ssids[siteId].find((ssid) => ssid.id == ssidId);
+          if (!ssidStatus) {
+            this.log.error('SSID not found');
+            return;
+          }
+          ssidStatus[command] = state.val;
+          this.log.debug(JSON.stringify(ssidStatus));
+          await this.requestClient({
+            method: 'patch',
+            url: `https://${this.config.ip}:${this.config.port}/${this.omadacId}/api/v2/sites/${siteId}/setting/wlans/${ssidStatus.wlanId}/ssids/${ssidId}`,
+            headers: {
+              'Content-Type': ' application/json;charset=UTF-8',
+              Accept: 'application/json, text/plain, */*',
+              'Csrf-Token': this.session.token,
+            },
+            data: ssidStatus,
           })
-          .catch((error) => {
-            if (error.response) {
-              if (error.response.status === 401) {
-                error.response && this.log.debug(JSON.stringify(error.response.data));
-                this.log.info(' receive 401 error. Refresh Token in 60 seconds');
-                this.refreshTokenTimeout && clearTimeout(this.refreshTokenTimeout);
-                this.refreshTokenTimeout = setTimeout(() => {
-                  this.refreshToken();
-                }, 1000 * 60);
-
+            .then(async (res) => {
+              if (res.data.errorCode != 0) {
+                this.log.error(JSON.stringify(res.data));
                 return;
               }
-            }
-            this.log.error(error);
-            error.response && this.log.error(JSON.stringify(error.response.data));
-          });
+              this.log.info(JSON.stringify(res.data));
+            })
+            .catch((error) => {
+              if (error.response) {
+                if (error.response.status === 401) {
+                  error.response && this.log.debug(JSON.stringify(error.response.data));
+                  this.log.info(' receive 401 error. Refresh Token in 60 seconds');
+                  this.refreshTokenTimeout && clearTimeout(this.refreshTokenTimeout);
+                  this.refreshTokenTimeout = setTimeout(() => {
+                    this.refreshToken();
+                  }, 1000 * 60);
 
-        this.refreshTimeout = setTimeout(() => {
-          this.updateSsidSettings();
-        }, 5000);
+                  return;
+                }
+              }
+              this.log.error(error);
+              error.response && this.log.error(JSON.stringify(error.response.data));
+            });
+
+          this.refreshTimeout = setTimeout(() => {
+            this.updateSsidSettings();
+          }, 5000);
+        }
+
+        if (idArray[3] === 'insight') {
+          const insightId = idArray[4];
+          const command = idArray[5];
+
+          const insightStatus = this.insights.find((insight) => insight.mac === insightId);
+          if (!insightStatus) {
+            this.log.error('Insight not found');
+            return;
+          }
+          insightStatus[command] = state.val;
+          this.log.debug(JSON.stringify(insightStatus));
+
+          await this.requestClient({
+            method: 'patch',
+            url: `https://${this.config.ip}:${this.config.port}/${this.omadacId}/api/v2/sites/${siteId}/insight/clients/${insightId}`,
+            headers: {
+              'Content-Type': 'application/json;charset=UTF-8',
+              Accept: 'application/json, text/plain, */*',
+              'Csrf-Token': this.session.token,
+            },
+            data: insightStatus,
+          })
+            .then(async (res) => {
+              if (res.data.errorCode != 0) {
+                this.log.error(JSON.stringify(res.data));
+                return;
+              }
+              this.log.info(JSON.stringify(res.data));
+            })
+            .catch((error) => {
+              if (error.response) {
+                if (error.response.status === 401) {
+                  error.response && this.log.debug(JSON.stringify(error.response.data));
+                  this.log.info(' receive 401 error. Refresh Token in 60 seconds');
+                  this.refreshTokenTimeout && clearTimeout(this.refreshTokenTimeout);
+                  this.refreshTokenTimeout = setTimeout(() => {
+                    this.refreshToken();
+                  }, 1000 * 60);
+
+                  return;
+                }
+              }
+              this.log.error(error);
+              error.response && this.log.error(JSON.stringify(error.response.data));
+            });
+
+          this.refreshTimeout = setTimeout(() => {
+            this.updateDevices();
+          }, 5000);
+        }
       }
     }
   }

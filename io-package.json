@@ -28,18 +28,18 @@
         "zh-cn": "首次出版"
       }
     },
-    "title": "TP-Link Omada",
+    "title": "TP-Link Omada2",
     "titleLang": {
-      "en": "TP-Link Omada",
-      "de": "TP-Link Omada",
-      "ru": "TP-Link Омада",
-      "pt": "TP-Link Omada",
-      "nl": "TP Link Omada",
-      "fr": "TP-Link Omada",
-      "it": "TP-Link Omada",
-      "es": "TP-Link Omada",
-      "pl": "TP-Link Omada",
-      "zh-cn": "TP-Link 奥马达"
+      "en": "TP-Link Omada2",
+      "de": "TP-Link Omada2",
+      "ru": "TP-Link Омада2",
+      "pt": "TP-Link Omada2",
+      "nl": "TP Link Omada2",
+      "fr": "TP-Link Omada2",
+      "it": "TP-Link Omada2",
+      "es": "TP-Link Omada2",
+      "pl": "TP-Link Omada2",
+      "zh-cn": "TP-Link 奥马达2"
     },
     "desc": {
       "en": "Adapter for TP-Link Omada",
