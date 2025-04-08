@@ -1,12 +1,12 @@
 {
-  "name": "iobroker.omada",
-  "version": "0.0.7",
+  "name": "iobroker.omada2",
+  "version": "0.0.1",
   "description": "Adapter for TP-Link Omada",
   "author": {
-    "name": "TA2k",
-    "email": "tombox2020@gmail.com"
+    "name": "tintintin1980",
+    "email": "tintintin1980@gmail.com"
   },
-  "homepage": "https://github.com/TA2k/ioBroker.omada",
+  "homepage": "https://github.com/tintintin1980/ioBroker.omada2",
   "license": "MIT",
   "keywords": [
     "omada",
@@ -14,7 +14,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/TA2k/ioBroker.omada.git"
+    "url": "https://github.com/tintintin1980/ioBroker.omada2.git"
   },
   "engines": {
     "node": ">= 14"
@@ -56,7 +56,7 @@
     "translate": "translate-adapter"
   },
   "bugs": {
-    "url": "https://github.com/TA2k/ioBroker.omada/issues"
+    "url": "https://github.com/tintintin1980/ioBroker.omada2/issues"
   },
   "readmeFilename": "README.md"
 }
