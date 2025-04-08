@@ -497,15 +497,28 @@ class Omada extends utils.Adapter {
           insightStatus[command] = state.val;
           this.log.debug(JSON.stringify(insightStatus));
 
+          const blockStatus = insightStatus.block; // Speichert den Zustand von 'block' in einer Variablen
+          this.log.debug(`Block status: ${blockStatus}`);
+
+          let url;
+          if (blockStatus === true) {
+            url = `https://${this.config.ip}:${this.config.port}/${this.omadacId}/api/v2/sites/${siteId}/cmd/clients/${insightId}/block`;
+          } else if (blockStatus === false) {
+            url = `https://${this.config.ip}:${this.config.port}/${this.omadacId}/api/v2/sites/${siteId}/cmd/clients/${insightId}/unblock`;
+          } else {
+            this.log.error('Invalid block status');
+            return;
+          }
+
           await this.requestClient({
-            method: 'patch',
-            url: `https://${this.config.ip}:${this.config.port}/${this.omadacId}/api/v2/sites/${siteId}/cmd/clients/${insightId}`,
+            method: 'post',
+            url: url,
             headers: {
               'Content-Type': 'application/json;charset=UTF-8',
               Accept: 'application/json, text/plain, */*',
               'Csrf-Token': this.session.token,
             },
-            data: insightStatus,
+            data: {},
           })
             .then(async (res) => {
               if (res.data.errorCode != 0) {
