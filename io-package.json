@@ -53,7 +53,7 @@
       "pl": "Adapter do TP-Link Omada",
       "zh-cn": "适用于 TP-Link Omada 的适配器"
     },
-    "authors": ["TA2k <tombox2020@gmail.com>"],
+    "authors": ["tintintin1980"],
     "keywords": ["omada", "tp-link"],
     "license": "MIT",
     "platform": "Javascript/Node.js",
@@ -61,7 +61,7 @@
     "icon": "omada.png",
     "enabled": true,
     "extIcon": "https://raw.githubusercontent.com/TA2k/ioBroker.omada/main/admin/omada.png",
-    "readme": "https://github.com/TA2k/ioBroker.omada/blob/main/README.md",
+    "readme": "https://github.com/tintintin1980/ioBroker.omada2/blob/main/README.md",
     "loglevel": "info",
     "mode": "daemon",
     "type": "infrastructure",
