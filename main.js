@@ -498,7 +498,7 @@ class Omada extends utils.Adapter {
 
           await this.requestClient({
             method: 'patch',
-            url: `https://${this.config.ip}:${this.config.port}/${this.omadacId}/api/v2/sites/${siteId}/insight/clients/${insightId}`,
+            url: `https://${this.config.ip}:${this.config.port}/${this.omadacId}/api/v2/sites/${siteId}/cmd/clients/${insightId}`,
             headers: {
               'Content-Type': 'application/json;charset=UTF-8',
               Accept: 'application/json, text/plain, */*',
