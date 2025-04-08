@@ -1,7 +1,7 @@
 {
     "cli": true,
     "target": "directory",
-    "adapterName": "omada",
+    "adapterName": "omada2",
     "title": "TP-Link Omada",
     "description": "Adapter for TP-Link Omada",
     "keywords": ["omada", "tp-link"],
