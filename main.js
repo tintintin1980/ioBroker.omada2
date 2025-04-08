@@ -19,7 +19,7 @@ class Omada extends utils.Adapter {
   constructor(options) {
     super({
       ...options,
-      name: 'omada',
+      name: 'omada2',
     });
     this.on('ready', this.onReady.bind(this));
     this.on('stateChange', this.onStateChange.bind(this));
