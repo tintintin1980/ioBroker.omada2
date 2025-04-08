@@ -432,6 +432,7 @@ class Omada extends utils.Adapter {
     if (state) {
       if (!state.ack) {
         const idArray = id.split('.');
+        this.log.debug(idArray);
         const siteId = idArray[2];
         // const folder = idArray[3];
         if (idArray[3] === 'ssids') {
