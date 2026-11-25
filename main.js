@@ -330,18 +330,18 @@ class Omada extends utils.Adapter {
         this.log.debug(`start Update ${element.desc} for ${device.name} (${device.id})`);
         const requestConfig = element.openapi
           ? {
-              method: 'post',
-              url: `${this.baseUrl}/openapi/v2/${this.omadacId}/${url}`,
-              headers: { ...this.getHeaders(), 'Content-Type': 'application/json' },
-              data: { filters: { active: true }, sorts: {}, pageSize: 500, page: 1 },
-            }
+            method: 'post',
+            url: `${this.baseUrl}/openapi/v2/${this.omadacId}/${url}`,
+            headers: { ...this.getHeaders(), 'Content-Type': 'application/json' },
+            data: { filters: { active: true }, sorts: {}, pageSize: 500, page: 1 },
+          }
           : {
-              method: 'get',
-              url: this.isCloud
-                ? `${this.baseUrl}/openapi/v1/${this.omadacId}/${url}`
-                : `${this.baseUrl}/${this.omadacId}/api/v2/${url}`,
-              headers: this.getHeaders(),
-            };
+            method: 'get',
+            url: this.isCloud
+              ? `${this.baseUrl}/openapi/v1/${this.omadacId}/${url}`
+              : `${this.baseUrl}/${this.omadacId}/api/v2/${url}`,
+            headers: this.getHeaders(),
+          };
         await this.requestClient(requestConfig)
           .then(async (res) => {
             this.log.debug(element.url);
@@ -567,17 +567,17 @@ class Omada extends utils.Adapter {
     await this.sendCommand(
       this.isCloud
         ? {
-            method: 'patch',
-            url: `${this.baseUrl}/openapi/v1/${this.omadacId}/sites/${siteId}/wireless-network/ssids/${ssidId}/enable`,
-            headers: { ...this.getHeaders(), 'Content-Type': 'application/json' },
-            data: { ssidEnable: !!state.val },
-          }
+          method: 'patch',
+          url: `${this.baseUrl}/openapi/v1/${this.omadacId}/sites/${siteId}/wireless-network/ssids/${ssidId}/enable`,
+          headers: { ...this.getHeaders(), 'Content-Type': 'application/json' },
+          data: { ssidEnable: !!state.val },
+        }
         : {
-            method: 'patch',
-            url: `${this.baseUrl}/${this.omadacId}/api/v2/sites/${siteId}/setting/wlans/${ssidStatus.wlanId}/ssids/${ssidId}`,
-            headers: { ...this.getHeaders(), 'Content-Type': ' application/json;charset=UTF-8' },
-            data: ssidStatus,
-          },
+          method: 'patch',
+          url: `${this.baseUrl}/${this.omadacId}/api/v2/sites/${siteId}/setting/wlans/${ssidStatus.wlanId}/ssids/${ssidId}`,
+          headers: { ...this.getHeaders(), 'Content-Type': ' application/json;charset=UTF-8' },
+          data: ssidStatus,
+        },
     );
     this.refreshTimeout = setTimeout(() => {
       this.updateSsidSettings();
