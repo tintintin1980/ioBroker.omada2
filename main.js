@@ -41,6 +41,17 @@ class Omada extends utils.Adapter {
         cookies: { jar },
       }),
     });
+    this.requestClient.interceptors.response.use((response) => {
+      if (typeof response.data === 'string' && response.data.includes('<html')) {
+        this.log.warn('Received HTML instead of JSON. Session expired. Refresh Token in 5 seconds');
+        this.refreshTokenTimeout && clearTimeout(this.refreshTokenTimeout);
+        this.refreshTokenTimeout = setTimeout(() => {
+          this.refreshToken();
+        }, 5000);
+        return Promise.reject(new Error('Session expired - received HTML response'));
+      }
+      return response;
+    });
     this.omadacId = '';
   }
 
@@ -54,14 +65,25 @@ class Omada extends utils.Adapter {
       this.log.info('Set interval to minimum 0.5');
       this.config.interval = 0.5;
     }
-    if (!this.config.ip || !this.config.username || !this.config.password) {
-      this.log.error('Please set username and password in the instance settings');
-      return;
+    this.isCloud = this.config.connectionType === 'cloud';
+    if (this.isCloud) {
+      if (!this.config.cloudUrl || !this.config.cloudOmadacId || !this.config.clientId || !this.config.clientSecret) {
+        this.log.error('Please set Open API URL, Omada ID, Client ID and Client Secret in the instance settings');
+        return;
+      }
+      this.baseUrl = this.config.cloudUrl.trim().replace(/\/+$/, '');
+      this.omadacId = this.config.cloudOmadacId.trim();
+    } else {
+      if (!this.config.ip || !this.config.username || !this.config.password) {
+        this.log.error('Please set username and password in the instance settings');
+        return;
+      }
+      this.baseUrl = `https://${this.config.ip}:${this.config.port}`;
     }
 
     this.subscribeStates('*');
 
-    this.log.info('Login to Omada ' + this.config.ip + ':' + this.config.port);
+    this.log.info('Login to Omada ' + this.baseUrl);
     await this.login();
     if (this.session.token) {
       await this.getDeviceList();
@@ -70,17 +92,22 @@ class Omada extends utils.Adapter {
         await this.updateDevices();
       }, this.config.interval * 1000);
     }
+    // Open API access tokens expire after 2 hours
     this.refreshTokenInterval = setInterval(
       () => {
         this.refreshToken();
       },
-      6 * 60 * 60 * 1000,
+      (this.isCloud ? 1 : 6) * 60 * 60 * 1000,
     );
   }
   async login() {
+    if (this.isCloud) {
+      await this.loginCloud();
+      return;
+    }
     await this.requestClient({
       method: 'get',
-      url: `https://${this.config.ip}:${this.config.port}/api/info`,
+      url: `${this.baseUrl}/api/info`,
     })
       .then((res) => {
         this.log.debug(JSON.stringify(res.data));
@@ -98,7 +125,7 @@ class Omada extends utils.Adapter {
       });
     await this.requestClient({
       method: 'post',
-      url: `https://${this.config.ip}:${this.config.port}/${this.omadacId}/api/v2/login`,
+      url: `${this.baseUrl}/${this.omadacId}/api/v2/login`,
       headers: {
         Accept: 'application/json, text/javascript, */*; q=0.01',
         'Content-Type': 'application/json; charset=UTF-8',
@@ -126,14 +153,62 @@ class Omada extends utils.Adapter {
       });
   }
 
+  // Omada Open API (cloud based controller) using client credentials
+  async loginCloud() {
+    await this.requestClient({
+      method: 'post',
+      url: `${this.baseUrl}/openapi/authorize/token?grant_type=client_credentials`,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      data: {
+        omadacId: this.omadacId,
+        client_id: this.config.clientId,
+        client_secret: this.config.clientSecret,
+      },
+    })
+      .then((res) => {
+        if (res.data.errorCode === 0 && res.data.result && res.data.result.accessToken) {
+          this.log.info('Login successful');
+          this.session = { token: res.data.result.accessToken };
+          this.setState('info.connection', true, true);
+        } else {
+          this.log.error('Login failed: ' + JSON.stringify(res.data));
+        }
+      })
+      .catch((error) => {
+        this.log.error(error);
+        this.log.error('Login failed');
+        error.response && this.log.error(JSON.stringify(error.response.data));
+      });
+  }
+
+  getHeaders() {
+    if (this.isCloud) {
+      return {
+        Accept: 'application/json',
+        Authorization: `AccessToken=${this.session.token}`,
+      };
+    }
+    return {
+      Accept: 'application/json, text/plain, */*',
+      'Csrf-Token': this.session.token,
+      'Omada-Request-Source': 'web-local',
+    };
+  }
+
+  isTokenExpired(errorCode) {
+    // -1200: local session expired, -44112/-44113: Open API access token expired/invalid
+    return [-1200, -44112, -44113].includes(errorCode);
+  }
+
   async getDeviceList() {
     await this.requestClient({
       method: 'get',
-      url: `https://${this.config.ip}:${this.config.port}/${this.omadacId}/api/v2/sites?currentPageSize=100&currentPage=1`,
-      headers: {
-        Accept: 'application/json, text/plain, */*',
-        'Csrf-Token': this.session.token,
-      },
+      url: this.isCloud
+        ? `${this.baseUrl}/openapi/v1/${this.omadacId}/sites?page=1&pageSize=100`
+        : `${this.baseUrl}/${this.omadacId}/api/v2/sites?currentPageSize=100&currentPage=1`,
+      headers: this.getHeaders(),
     })
       .then(async (res) => {
         this.log.debug(JSON.stringify(res.data));
@@ -142,9 +217,9 @@ class Omada extends utils.Adapter {
           for (const device of res.data.result.data) {
             delete device.deviceAccount;
             this.log.debug(JSON.stringify(device));
-            const id = device.id;
+            const id = device.id || device.siteId;
 
-            this.deviceArray.push(device);
+            this.deviceArray.push({ ...device, id });
             const name = device.name;
 
             await this.setObjectNotExistsAsync(id, {
@@ -196,27 +271,32 @@ class Omada extends utils.Adapter {
     // const currentDate = Math.round(Date.now() / 1000);
     const statusArray = [
       {
-        url: 'sites/$id/clients?currentPageSize=500&currentPage=1&filters.active=true',
+        url: 'sites/$id/clients',
         path: 'clients',
         desc: 'List of clients',
         preferedArrayName: 'mac',
         preferedArrayDesc: 'name',
         deleteBeforeUpdate: false,
+        openapi: true,
       },
       {
         url: 'sites/$id/setting/wlans',
+        cloudUrl: 'sites/$id/wireless-network/wlans',
         path: 'wlans',
         desc: 'List of wlans',
         preferedArrayName: 'id',
+        cloudPreferedArrayName: 'wlanId',
         preferedArrayDesc: 'name',
       },
       {
         url: 'sites/$id/dashboard/overviewDiagram',
+        cloudUrl: 'sites/$id/dashboard/overview-diagram',
         path: 'dashboardOverviewDiagram',
         desc: 'Dashboard Overview Diagram',
       },
       {
         url: 'sites/$id/grid/devices?currentPage=1&currentPageSize=500',
+        cloudUrl: 'sites/$id/devices?page=1&pageSize=1000',
         path: 'devices',
         desc: 'Devices',
         preferedArrayName: 'mac',
@@ -233,6 +313,7 @@ class Omada extends utils.Adapter {
       },
       {
         url: 'sites/$id/site/alerts?currentPage=1&currentPageSize=100',
+        cloudUrl: `sites/$id/logs/alerts?page=1&pageSize=100&filters.timeStart=0&filters.timeEnd=${Date.now()}&filters.resolved=false`,
         path: 'alerts',
         desc: 'Alerts',
         forceIndex: true,
@@ -240,23 +321,42 @@ class Omada extends utils.Adapter {
     ];
 
     for (const element of statusArray) {
+      // Open API has no equivalent for some endpoints (e.g. insight clients)
+      if (this.isCloud && !element.openapi && !element.cloudUrl) {
+        continue;
+      }
       for (const device of this.deviceArray) {
-        const url = element.url.replace('$id', device.id);
+        const url = (this.isCloud && element.cloudUrl ? element.cloudUrl : element.url).replace('$id', device.id);
         this.log.debug(`start Update ${element.desc} for ${device.name} (${device.id})`);
-        await this.requestClient({
-          method: 'get',
-          url: `https://${this.config.ip}:${this.config.port}/${this.omadacId}/api/v2/${url}`,
-          headers: {
-            Accept: 'application/json, text/plain, */*',
-            'Csrf-Token': this.session.token,
-          },
-        })
+        const requestConfig = element.openapi
+          ? {
+              method: 'post',
+              url: `${this.baseUrl}/openapi/v2/${this.omadacId}/${url}`,
+              headers: { ...this.getHeaders(), 'Content-Type': 'application/json' },
+              data: { filters: { active: true }, sorts: {}, pageSize: 500, page: 1 },
+            }
+          : {
+              method: 'get',
+              url: this.isCloud
+                ? `${this.baseUrl}/openapi/v1/${this.omadacId}/${url}`
+                : `${this.baseUrl}/${this.omadacId}/api/v2/${url}`,
+              headers: this.getHeaders(),
+            };
+        await this.requestClient(requestConfig)
           .then(async (res) => {
             this.log.debug(element.url);
             this.log.debug(JSON.stringify(res.data));
 
+            if (this.isTokenExpired(res.data.errorCode)) {
+              this.log.info('Token expired. Refresh Token in 5 seconds');
+              this.refreshTokenTimeout && clearTimeout(this.refreshTokenTimeout);
+              this.refreshTokenTimeout = setTimeout(() => {
+                this.refreshToken();
+              }, 5000);
+              return;
+            }
             if (res.data.errorCode != 0) {
-              this.log.error(element.url);
+              this.log.error(url);
               this.log.error(JSON.stringify(res.data));
               return;
             }
@@ -268,8 +368,8 @@ class Omada extends utils.Adapter {
               data = data.result;
             }
 
-            if (element.path === 'wlans' && data.data) {
-              this.wlans = data.data;
+            if (element.path === 'wlans' && (data.data || Array.isArray(data))) {
+              this.wlans = data.data || data;
               this.updateSsidSettings();
             }
             if (element.path === 'clients') {
@@ -303,7 +403,7 @@ class Omada extends utils.Adapter {
             this.log.debug(`start parsing ${element.path} for ${device.name}`);
             await this.json2iob.parse(device.id + '.' + element.path, data, {
               forceIndex: element.forceIndex,
-              preferedArrayName: element.preferedArrayName,
+              preferedArrayName: (this.isCloud && element.cloudPreferedArrayName) || element.preferedArrayName,
               preferedArrayDesc: element.preferedArrayDesc,
               channelName: element.desc,
               deleteBeforeUpdate: element.deleteBeforeUpdate,
@@ -327,16 +427,16 @@ class Omada extends utils.Adapter {
             if (error.response) {
               if (error.response.status === 401) {
                 error.response && this.log.debug(JSON.stringify(error.response.data));
-                this.log.info(element.path + ' receive 401 error. Refresh Token in 60 seconds');
+                this.log.info(element.path + ' receive 401 error. Refresh Token in 5 seconds');
                 this.refreshTokenTimeout && clearTimeout(this.refreshTokenTimeout);
                 this.refreshTokenTimeout = setTimeout(() => {
                   this.refreshToken();
-                }, 1000 * 60);
+                }, 5000);
 
                 return;
               }
             }
-            this.log.error(element.url);
+            this.log.error(url);
             this.log.error(error);
             error.response && this.log.error(JSON.stringify(error.response.data));
           });
@@ -346,18 +446,27 @@ class Omada extends utils.Adapter {
 
   async updateSsidSettings() {
     for (const wlan of this.wlans) {
-      const url = 'sites/' + wlan.site + '/setting/wlans/' + wlan.id + '/ssids?currentPage=1&currentPageSize=500';
+      const url = this.isCloud
+        ? `sites/${wlan.site}/wireless-network/wlans/${wlan.wlanId}/ssids?page=1&pageSize=100`
+        : 'sites/' + wlan.site + '/setting/wlans/' + wlan.id + '/ssids?currentPage=1&currentPageSize=500';
       await this.requestClient({
         method: 'get',
-        url: `https://${this.config.ip}:${this.config.port}/${this.omadacId}/api/v2/${url}`,
-        headers: {
-          Accept: 'application/json, text/plain, */*',
-          'Csrf-Token': this.session.token,
-        },
+        url: this.isCloud
+          ? `${this.baseUrl}/openapi/v1/${this.omadacId}/${url}`
+          : `${this.baseUrl}/${this.omadacId}/api/v2/${url}`,
+        headers: this.getHeaders(),
       })
         .then(async (res) => {
           this.log.debug(JSON.stringify(res.data));
           if (!res.data.result) {
+            return;
+          }
+          if (this.isTokenExpired(res.data.errorCode)) {
+            this.log.info('Token expired. Refresh Token in 5 seconds');
+            this.refreshTokenTimeout && clearTimeout(this.refreshTokenTimeout);
+            this.refreshTokenTimeout = setTimeout(() => {
+              this.refreshToken();
+            }, 5000);
             return;
           }
           if (res.data.errorCode != 0) {
@@ -384,11 +493,11 @@ class Omada extends utils.Adapter {
           if (error.response) {
             if (error.response.status === 401) {
               error.response && this.log.debug(JSON.stringify(error.response.data));
-              this.log.info(' receive 401 error. Refresh Token in 60 seconds');
+              this.log.info(' receive 401 error. Refresh Token in 5 seconds');
               this.refreshTokenTimeout && clearTimeout(this.refreshTokenTimeout);
               this.refreshTokenTimeout = setTimeout(() => {
                 this.refreshToken();
-              }, 1000 * 60);
+              }, 5000);
 
               return;
             }
@@ -429,127 +538,112 @@ class Omada extends utils.Adapter {
    * @param {ioBroker.State | null | undefined} state
    */
   async onStateChange(id, state) {
-    if (state) {
-      if (!state.ack) {
-        const idArray = id.split('.');
-        this.log.debug(JSON.stringify(idArray));
-        const siteId = idArray[2];
-        // const folder = idArray[3];
-        if (idArray[3] === 'ssids') {
-          const ssidId = idArray[4];
-          const command = idArray[5];
-
-          const ssidStatus = this.ssids[siteId].find((ssid) => ssid.id == ssidId);
-          if (!ssidStatus) {
-            this.log.error('SSID not found');
-            return;
-          }
-          ssidStatus[command] = state.val;
-          this.log.debug(JSON.stringify(ssidStatus));
-          await this.requestClient({
-            method: 'patch',
-            url: `https://${this.config.ip}:${this.config.port}/${this.omadacId}/api/v2/sites/${siteId}/setting/wlans/${ssidStatus.wlanId}/ssids/${ssidId}`,
-            headers: {
-              'Content-Type': ' application/json;charset=UTF-8',
-              Accept: 'application/json, text/plain, */*',
-              'Csrf-Token': this.session.token,
-            },
-            data: ssidStatus,
-          })
-            .then(async (res) => {
-              if (res.data.errorCode != 0) {
-                this.log.error(JSON.stringify(res.data));
-                return;
-              }
-              this.log.info(JSON.stringify(res.data));
-            })
-            .catch((error) => {
-              if (error.response) {
-                if (error.response.status === 401) {
-                  error.response && this.log.debug(JSON.stringify(error.response.data));
-                  this.log.info(' receive 401 error. Refresh Token in 60 seconds');
-                  this.refreshTokenTimeout && clearTimeout(this.refreshTokenTimeout);
-                  this.refreshTokenTimeout = setTimeout(() => {
-                    this.refreshToken();
-                  }, 1000 * 60);
-
-                  return;
-                }
-              }
-              this.log.error(error);
-              error.response && this.log.error(JSON.stringify(error.response.data));
-            });
-
-          this.refreshTimeout = setTimeout(() => {
-            this.updateSsidSettings();
-          }, 5000);
-        }
-
-        if (idArray[3] === 'insight') {
-          const insightId = idArray[4];
-          const command = idArray[5];
-
-          const insightStatus = this.insights.find((insight) => insight.mac === insightId);
-          if (!insightStatus) {
-            this.log.error('Insight not found');
-            return;
-          }
-          insightStatus[command] = state.val;
-          this.log.debug(JSON.stringify(insightStatus));
-
-          const blockStatus = insightStatus.block; // Speichert den Zustand von 'block' in einer Variablen
-          this.log.debug(`Block status: ${blockStatus}`);
-
-          let url;
-          if (blockStatus === true) {
-            url = `https://${this.config.ip}:${this.config.port}/${this.omadacId}/api/v2/sites/${siteId}/cmd/clients/${insightId}/block`;
-          } else if (blockStatus === false) {
-            url = `https://${this.config.ip}:${this.config.port}/${this.omadacId}/api/v2/sites/${siteId}/cmd/clients/${insightId}/unblock`;
-          } else {
-            this.log.error('Invalid block status');
-            return;
-          }
-
-          await this.requestClient({
-            method: 'post',
-            url: url,
-            headers: {
-              'Content-Type': 'application/json;charset=UTF-8',
-              Accept: 'application/json, text/plain, */*',
-              'Csrf-Token': this.session.token,
-            },
-            data: {},
-          })
-            .then(async (res) => {
-              if (res.data.errorCode != 0) {
-                this.log.error(JSON.stringify(res.data));
-                return;
-              }
-              this.log.info(JSON.stringify(res.data));
-            })
-            .catch((error) => {
-              if (error.response) {
-                if (error.response.status === 401) {
-                  error.response && this.log.debug(JSON.stringify(error.response.data));
-                  this.log.info(' receive 401 error. Refresh Token in 60 seconds');
-                  this.refreshTokenTimeout && clearTimeout(this.refreshTokenTimeout);
-                  this.refreshTokenTimeout = setTimeout(() => {
-                    this.refreshToken();
-                  }, 1000 * 60);
-
-                  return;
-                }
-              }
-              this.log.error(error);
-              error.response && this.log.error(JSON.stringify(error.response.data));
-            });
-
-          this.refreshTimeout = setTimeout(() => {
-            this.updateDevices();
-          }, 5000);
-        }
-      }
+    if (!state || state.ack) {
+      return;
     }
+    // Pfad relativ zum Adapter-Namespace: <siteId>.<ordner>.<objektId>.<befehl>
+    const [siteId, folder, objectId, command] = id.slice(this.namespace.length + 1).split('.');
+    this.log.debug(JSON.stringify({ siteId, folder, objectId, command }));
+
+    if (folder === 'ssids') {
+      await this.handleSsidChange(siteId, objectId, command, state);
+    } else if (folder === 'insight') {
+      await this.handleInsightChange(siteId, objectId, command, state);
+    }
+  }
+
+  async handleSsidChange(siteId, ssidId, command, state) {
+    const ssidStatus = (this.ssids[siteId] || []).find((ssid) => ssid.id == ssidId);
+    if (!ssidStatus) {
+      this.log.error('SSID not found');
+      return;
+    }
+    if (this.isCloud && command !== 'ssidEnable') {
+      this.log.warn(`Changing ${command} is not supported via Open API. Only ssidEnable can be changed.`);
+      return;
+    }
+    ssidStatus[command] = state.val;
+    this.log.debug(JSON.stringify(ssidStatus));
+    await this.sendCommand(
+      this.isCloud
+        ? {
+            method: 'patch',
+            url: `${this.baseUrl}/openapi/v1/${this.omadacId}/sites/${siteId}/wireless-network/ssids/${ssidId}/enable`,
+            headers: { ...this.getHeaders(), 'Content-Type': 'application/json' },
+            data: { ssidEnable: !!state.val },
+          }
+        : {
+            method: 'patch',
+            url: `${this.baseUrl}/${this.omadacId}/api/v2/sites/${siteId}/setting/wlans/${ssidStatus.wlanId}/ssids/${ssidId}`,
+            headers: { ...this.getHeaders(), 'Content-Type': ' application/json;charset=UTF-8' },
+            data: ssidStatus,
+          },
+    );
+    this.refreshTimeout = setTimeout(() => {
+      this.updateSsidSettings();
+    }, 5000);
+  }
+
+  async handleInsightChange(siteId, mac, command, state) {
+    if (this.isCloud) {
+      this.log.warn('Blocking clients is not supported for cloud controllers');
+      return;
+    }
+    if (command !== 'block') {
+      this.log.debug(`Changing ${command} of insight client is not supported`);
+      return;
+    }
+    if (typeof state.val !== 'boolean') {
+      this.log.error('Invalid block status');
+      return;
+    }
+    const insightStatus = this.insights.find((insight) => insight.mac === mac);
+    if (!insightStatus) {
+      this.log.error('Insight not found');
+      return;
+    }
+    insightStatus.block = state.val;
+    this.log.debug(`Block status: ${state.val}`);
+
+    await this.sendCommand({
+      method: 'post',
+      url: `${this.baseUrl}/${this.omadacId}/api/v2/sites/${siteId}/cmd/clients/${mac}/${state.val ? 'block' : 'unblock'}`,
+      headers: { ...this.getHeaders(), 'Content-Type': 'application/json;charset=UTF-8' },
+      data: {},
+    });
+    this.refreshTimeout = setTimeout(() => {
+      this.updateDevices();
+    }, 5000);
+  }
+
+  /**
+   * Fuehrt einen schreibenden Request aus und behandelt Fehler/Token-Ablauf einheitlich.
+   * @param {object} requestConfig axios config
+   */
+  async sendCommand(requestConfig) {
+    await this.requestClient(requestConfig)
+      .then((res) => {
+        if (res.data.errorCode != 0) {
+          this.log.error(JSON.stringify(res.data));
+          if (this.isTokenExpired(res.data.errorCode)) {
+            this.refreshTokenTimeout && clearTimeout(this.refreshTokenTimeout);
+            this.refreshTokenTimeout = setTimeout(() => this.refreshToken(), 5000);
+          }
+          return;
+        }
+        this.log.info(JSON.stringify(res.data));
+      })
+      .catch((error) => {
+        if (error.response && error.response.status === 401) {
+          this.log.debug(JSON.stringify(error.response.data));
+          this.log.info(' receive 401 error. Refresh Token in 5 seconds');
+          this.refreshTokenTimeout && clearTimeout(this.refreshTokenTimeout);
+          this.refreshTokenTimeout = setTimeout(() => this.refreshToken(), 5000);
+          return;
+        }
+        this.log.error(error);
+        error.response && this.log.error(JSON.stringify(error.response.data));
+      });
   }
 }
 

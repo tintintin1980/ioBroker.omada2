@@ -16,15 +16,52 @@
 Adapter for TP-Link Omada  
 forked from TA2k/ioBroker.omada
 
+**Voraussetzung:** Omada SDN Controller >= 6.2.0
+
 # Loginablauf
 
 Die Omada IP, Login und Passwort eingeben.
 Default Port für Hardware Controller ist 443
 
+## Cloud-basierter Controller (Open API)
+
+Als Controller-Typ "Cloud-basierter Controller (Open API)" wählen. Im Controller unter
+Global View > Einstellungen > Plattform-Integration > Open API eine App im Client-Modus anlegen
+und Interface-Zugriffsadresse, Omada ID, Client ID und Client Secret eintragen.
+
+Im Cloud-Modus werden Insight Clients nicht abgefragt (kein Open API Endpunkt) und bei SSIDs kann
+nur `ssidEnable` geändert werden (dafür ist eine Admin-Rolle der App nötig).
+
+_English: select "Cloud-based controller (Open API)", create a Client Mode app under Global View >
+Settings > Platform Integration > Open API and enter the interface access address, Omada ID,
+Client ID and Client Secret. Insight clients are not available and only `ssidEnable` can be changed._
+
 # Steuerung
 
-Ssids Einstellungen können via omada.0.id.ssids geändert werden.  
+Ssids Einstellungen können via omada2.0.id.ssids geändert werden.  
 Auf Änderungen von Insights reagieren wurde ergänzt. Clients können durch Zustandsänderung von 'block' block oder unblock gesetzt werden.
+
+## Diskussion und Fragen
+
+<https://forum.iobroker.net/topic/62562/test-adapter-omada-tp-link>
+
+## Changelog
+
+### **WORK IN PROGRESS**
+
+- Unterstützung für cloud-basierte Controller über die Omada Open API (Client Credentials)
+
+### 0.1.0 (2026-03-26)
+
+- (BREAKING) Erfordert Omada SDN Controller >= 6.2.0
+- Clients-Endpunkt auf OpenAPI v2 (POST) umgestellt
+- Omada-Request-Source Header hinzugefügt
+- Fehlerbehebung: Aufgelöste URL wird im Error-Log angezeigt
+
+### 0.0.1
+
+- (TA2k) initial release
+
 
 ## License
 
